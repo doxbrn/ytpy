@@ -1,84 +1,82 @@
 #!/bin/bash
 
+# Configurações
+API_URL="http://localhost:5000/api"
+VIDEO_ID="dQw4w9WgXcQ"  # Rick Roll para teste
+FORMAT="mp4"
+QUALITY="720p"
+
 # Cores para output
-GREEN='\033[0;32m'
 RED='\033[0;31m'
+GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# URL base da API
-BASE_URL="http://localhost:5001/api"
-
-# Função para testar uma rota
-test_route() {
-    local method=$1
-    local endpoint=$2
+# Função para testar endpoint
+test_endpoint() {
+    local endpoint=$1
+    local method=${2:-GET}
     local data=$3
-    local description=$4
     
-    echo -e "\n${YELLOW}Testando: ${description}${NC}"
-    echo -e "Endpoint: ${method} ${endpoint}"
+    echo -e "\n${YELLOW}Testando $method $endpoint${NC}"
     
-    if [ -n "$data" ]; then
-        echo -e "Dados: ${data}"
-    fi
-    
-    # Executa o curl com ou sem dados
     if [ "$method" = "GET" ]; then
-        response=$(curl -s -w "\n%{http_code}" -X ${method} "${BASE_URL}${endpoint}")
+        response=$(curl -s -w "\n%{http_code}" -X $method "$API_URL$endpoint")
     else
-        response=$(curl -s -w "\n%{http_code}" -X ${method} "${BASE_URL}${endpoint}" \
-            -H "Content-Type: application/json" \
-            -d "${data}")
+        response=$(curl -s -w "\n%{http_code}" -X $method "$API_URL$endpoint" \
+            -H "Content-Type: application/json" -d "$data")
     fi
     
-    # Extrai o código HTTP da resposta
     http_code=$(echo "$response" | tail -n1)
-    # Extrai o corpo da resposta
     body=$(echo "$response" | sed '$d')
     
-    # Verifica se a requisição foi bem sucedida
-    if [ $http_code -ge 200 ] && [ $http_code -lt 300 ]; then
-        echo -e "${GREEN}✓ Sucesso (HTTP ${http_code})${NC}"
+    if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 300 ]; then
+        echo -e "${GREEN}✓ Sucesso (HTTP $http_code)${NC}"
+        echo "$body" | jq '.' 2>/dev/null || echo "$body"
     else
-        echo -e "${RED}✗ Falha (HTTP ${http_code})${NC}"
+        echo -e "${RED}✗ Erro (HTTP $http_code)${NC}"
+        echo "$body"
     fi
-    
-    echo "Resposta:"
-    echo "$body" | python3 -m json.tool 2>/dev/null || echo "$body"
-    echo "----------------------------------------"
 }
 
-# Video de exemplo do YouTube para testes
-VIDEO_URL="https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+# Testa status da API
+echo -e "\n${YELLOW}=== Testando Status da API ===${NC}"
+test_endpoint "/status"
 
-echo -e "${GREEN}Iniciando testes da API...${NC}"
+# Testa informações do vídeo
+echo -e "\n${YELLOW}=== Testando Informações do Vídeo ===${NC}"
+test_endpoint "/info?url=https://www.youtube.com/watch?v=$VIDEO_ID"
 
-# 1. Teste de informações do vídeo
-test_route "GET" "/info?url=${VIDEO_URL}" "" "Obter informações do vídeo"
+# Testa formatos disponíveis
+echo -e "\n${YELLOW}=== Testando Formatos Disponíveis ===${NC}"
+test_endpoint "/info/formats?url=https://www.youtube.com/watch?v=$VIDEO_ID"
 
-# 2. Teste de formatos disponíveis
-test_route "GET" "/formats?url=${VIDEO_URL}" "" "Listar formatos disponíveis"
+# Testa legendas disponíveis
+echo -e "\n${YELLOW}=== Testando Legendas Disponíveis ===${NC}"
+test_endpoint "/subtitles?url=https://www.youtube.com/watch?v=$VIDEO_ID"
 
-# 3. Teste de download de vídeo
-download_data='{
-    "url": "'"${VIDEO_URL}"'",
-    "format": "mp4",
-    "quality": "best"
-}'
-test_route "POST" "/download" "$download_data" "Iniciar download de vídeo"
+# Testa download do vídeo
+echo -e "\n${YELLOW}=== Testando Download do Vídeo ===${NC}"
+test_endpoint "/download" "POST" "{\"url\":\"https://www.youtube.com/watch?v=$VIDEO_ID\",\"format\":\"$FORMAT\",\"quality\":\"$QUALITY\"}"
 
-# 4. Teste de status do download (usando um task_id de exemplo)
-test_route "GET" "/status/example-task-id" "" "Verificar status do download"
+# Testa progresso do download
+echo -e "\n${YELLOW}=== Testando Progresso do Download ===${NC}"
+test_endpoint "/download/progress/$VIDEO_ID"
 
-# 5. Teste de cancelamento de download
-test_route "POST" "/cancel/example-task-id" "" "Cancelar download"
+# Testa análise do vídeo
+echo -e "\n${YELLOW}=== Testando Análise do Vídeo ===${NC}"
+test_endpoint "/analytics/video?url=https://www.youtube.com/watch?v=$VIDEO_ID"
 
-# 6. Teste de análise do canal
-CHANNEL_URL="https://www.youtube.com/c/GoogleDevelopers"
-test_route "GET" "/analytics/channel/info?url=${CHANNEL_URL}" "" "Obter informações do canal"
+# Testa análise do canal
+echo -e "\n${YELLOW}=== Testando Análise do Canal ===${NC}"
+test_endpoint "/analytics/channel?url=https://www.youtube.com/watch?v=$VIDEO_ID"
 
-# 7. Teste de métricas do vídeo
-test_route "GET" "/analytics/video/metrics/${VIDEO_URL##*=}" "" "Obter métricas do vídeo"
+# Testa métricas
+echo -e "\n${YELLOW}=== Testando Métricas ===${NC}"
+test_endpoint "/metrics"
+
+# Testa status do cache
+echo -e "\n${YELLOW}=== Testando Status do Cache ===${NC}"
+test_endpoint "/cache/status"
 
 echo -e "\n${GREEN}Testes concluídos!${NC}"
